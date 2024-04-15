@@ -75,12 +75,12 @@ def extract_job(summary):
 
     # Define categories and their associated keywords
     categories = {
-        "Scientist": ["scientist", "physicist", "chemist", "biologist", "researcher", "hypothesis", "doctor"],
+        "Scientist": ["scientist", "physicist", "chemist", "biologist", "researcher", "hypothesis", "doctor", "inventor", "engineer"],
         "Author": ["author", "writer", "novelist", "playwright", "poet", "bard"],
         "Artist": ["artist", "singer", "musician", "actor", "painter", "director", "dancer", "actress"],
-        "Business Leader": ["businessman", "entrepreneur", "executive", "founder", "ceo", "industrialist"],
-        "Athlete": ["athlete", "sportsperson", "footballer", "basketball player", "runner", "swimmer", "tennis player", "baseball player", "volleyball player", "track and field athlete", "hockey player"],
-        "Religious": ["priest", "pope", "rabbi", "imam", "bible", "reverend", "minister"]
+        "Business Leader": ["business", "entrepreneur", "executive", "founder", "ceo", "industrialist"],
+        "Athlete": ["athlete", "sports", "football", "basketball", "runner", "swimmer", "tennis", "baseball", "volleyball", "track and field", "hockey"],
+        "Religious": ["priest", "pope", "rabbi", "imam", "bible", "reverend"]
     }
 
     # Keywords for 'Politician' and 'Head of State'
@@ -134,7 +134,7 @@ def main():
     df['Summary'] = df['HTML Content'].apply(extract_summary)  # Extract summary for categorization
     df['Birth Year'] = df['HTML Content'].apply(extract_birth_year)
     #df['Country of Origin'] = df['HTML Content'].apply(extract_country_of_origin)
-    df['Job'] = df['Summary'].apply(extract_job)
+    df['Job'] = df['HTML Content'].apply(extract_job)
     
     # Save the updated DataFrame
     df.drop(columns=['HTML Content'], inplace=True)
