@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import re
+import pycountry
 
 def get_wikipedia_html(person_name):
     """Fetch the full HTML of a person's Wikipedia page."""
@@ -22,6 +23,67 @@ def test_wikipedia_page_existence(person_name):
     else:
         return
 
+def extract_first_paragraph(html_content):
+    """
+    Fetches and extracts the first paragraph of a Wikipedia article from its HTML content.
+    
+    Returns:
+    str: The text of the first paragraph, or an error message if not found.
+    """
+    # Parse the HTML content
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Find the first paragraph in the main content area
+    # Wikipedia's main content usually resides within <div id="content">
+    content_div = soup.find('div', id='content')
+    print(content_div)
+    first_paragraph = content_div.find('p')
+
+    if first_paragraph:
+        return first_paragraph.get_text()
+    else:
+        return "No paragraph found."
+
+def find_all_countries_in_text(text):
+    """
+    Searches the provided text for all unique country names using the pycountry library and additional mappings.
+    
+    Args:
+        text (str): The text to search within.
+    
+    Returns:
+        list: A list of all unique countries found, or an empty list if no countries are found.
+    """
+    # Normalize text for case-insensitive comparison
+    text = text.lower()
+
+    # Set to store unique country names found
+    countries_found = set()
+
+    # Check for direct country names using pycountry
+    for country in pycountry.countries:
+        if country.name.lower() in text:
+            countries_found.add(country.name)
+
+    # Additional mapping for constituent countries and regions
+    constituent_to_country = {
+        "u.s.": "United States",
+        "england": "United Kingdom",
+        "scotland": "United Kingdom",
+        "wales": "United Kingdom",
+        "northern ireland": "United Kingdom",
+        "puerto rico": "United States",
+        "hong kong": "China",
+        # Add more as necessary
+    }
+
+    # Check for mapped regions or constituent countries
+    for region, country in constituent_to_country.items():
+        if region in text:
+            countries_found.add(country)
+
+    return list(countries_found)
+
 def extract_summary(html_content):
     """Extract the summary from the Wikipedia infobox within the HTML content."""
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -40,53 +102,52 @@ def extract_birth_year(html_content):
     return "Unknown"
 
 def extract_country_of_origin(html_content):
-    """Extract the country of origin from the provided Wikipedia text."""
-    # Search for patterns indicating the country of origin
-    patterns = [
-        r"born in\s*([^,.]+)",
-        r"from\s*([^,.]+)",
-        r"originally from\s*([^,.]+)",
-        r"raised in\s*([^,.]+)"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, html_content, re.IGNORECASE)
-        if match:
-            # Get the matched group
-            country = match.group(1).strip()
-            # Check if it's a link, and if so, extract the country from the linked page
-            if "<a" in country:
-                soup = BeautifulSoup(country, "html.parser")
-                link = soup.find("a")
-                # Follow the link and extract the country from the linked page
-                if link and link.get("href"):
-                    linked_url = "https://en.wikipedia.org" + link.get("href")
-                    linked_page = requests.get(linked_url)
-                    linked_soup = BeautifulSoup(linked_page.text, "html.parser")
-                    # Find the country information in the linked page
-                    country = linked_soup.find("span", {"class": "country-name"})
-                    if country:
-                        return country.get_text().strip()
-            return country
+    """Extract the country of origin from the Wikipedia infobox within the HTML content."""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    infobox = soup.find('table',  class_=['infobox', 'infobox-full-data'])
+
+    # Return the HTML content of the infobox if found, otherwise indicate
+
+    # METHOD 1 - Use the Infobox to find birth location
+    if infobox:
+        # Attempt to find the "Born" row in the infobox
+        for row in infobox.find_all('tr'):
+            print(row)
+            th = row.find('th')
+            if th and 'born' in th.text.lower():
+                td = row.find('td')
+                if td:
+                    print(td.text)
+                    # # [US Hardcode] Use regex to extract the country name
+                    # us_search = re.search(r'U.S.|United States', td.text)
+                    # if us_search:
+                    #     return "United States"
+
+                    # Find all country names and pick the first one
+                    other_countries_in_text = find_all_countries_in_text(td.text)
+                    if len(other_countries_in_text) > 0:
+                        return other_countries_in_text[0]
+
+                    # Last resort
+                    # This is a basic regex that matches common country patterns and needs to be customized based on expected inputs
+                    country_search = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', td.text)
+                    if country_search:
+                        return country_search.group(0)
     return "Unknown"
 
-def extract_job(summary):
+def extract_job(html_content):
     """Categorize the person based on job-related keywords with enhanced handling to differentiate between 'Politician' and 'Head of State'."""
-    text = summary.lower()
+    text = html_content.lower()
 
     # Define categories and their associated keywords
     categories = {
+        "Government": ["politician", "diplomat", "senator", "governor", "mayor", "congressman", " mp ", "councillor", "secretary", "treasur", "democrat", "republic", "president", "prime minister", "chancellor", "king", "queen", "emperor", "sultan", "shah", "monarch"],
         "Scientist": ["scientist", "physicist", "chemist", "biologist", "researcher", "hypothesis", "doctor", "inventor", "engineer"],
         "Author": ["author", "writer", "novelist", "playwright", "poet", "bard"],
         "Artist": ["artist", "singer", "musician", "actor", "painter", "director", "dancer", "actress"],
         "Business Leader": ["business", "entrepreneur", "executive", "founder", "ceo", "industrialist"],
         "Athlete": ["athlete", "sports", "football", "basketball", "runner", "swimmer", "tennis", "baseball", "volleyball", "track and field", "hockey"],
-        "Religious": ["priest", "pope", "rabbi", "imam", "bible", "reverend"]
-    }
-
-    # Keywords for 'Politician' and 'Head of State'
-    political_keywords = {
-        "Politician": ["politician", "diplomat", "senator", "governor", "mayor", "congressman", " mp ", "councillor", "secretary", "treasur", "democrat", "republic"],
-        "Head of State": ["president", "prime minister", "chancellor", "king", "queen", "emperor", "sultan", "shah", "monarch", "leader"]
+        "Religious": ["priest", "pope", "rabbi", "imam", "bible", "reverend", "minister"]
     }
 
     # Function to calculate keyword frequency
@@ -98,30 +159,14 @@ def extract_job(summary):
 
     # Determine the primary category from non-political ones
     primary_category = max(category_scores, key=category_scores.get, default=None) if category_scores else None
-    max_non_political_score = category_scores.get(primary_category, 0)
 
-    # Calculate scores for political categories
-    political_scores = {category: calculate_keyword_frequency(keywords) for category, keywords in political_keywords.items()}
-    best_political_category = max(political_scores, key=political_scores.get, default=None) if political_scores else None
-
-    print(political_scores)
-    print(category_scores)
-    print(max_non_political_score)
-    print(political_scores.get("Politician",0))
-
-    # Determine if candidate should be politician at all
-    if political_scores.get("Politician",0) > max_non_political_score:
-        
-        # Decide on the best political category if it is significant
-        if best_political_category and political_scores[best_political_category] > max_non_political_score:
-            primary_category = best_political_category
-  
-    return primary_category if primary_category and (category_scores.get(primary_category, 0) + political_scores.get(primary_category, 0)) > 0 else "Unknown"
+    return primary_category if primary_category and category_scores.get(primary_category, 0) > 0 else "Unknown"
 
 
 def main():
     # Load your dataset
     file_path = 'Trivia Draft - Wikipedia_Full_20240414.tsv'  # Change this to the path of your actual file
+    print(file_path)
     df = pd.read_csv(file_path, sep='\t')
     #df = df.head(5)
     
@@ -133,7 +178,7 @@ def main():
     print("Step 2: Parse Key Fields")
     df['Summary'] = df['HTML Content'].apply(extract_summary)  # Extract summary for categorization
     df['Birth Year'] = df['HTML Content'].apply(extract_birth_year)
-    #df['Country of Origin'] = df['HTML Content'].apply(extract_country_of_origin)
+    df['Country of Origin'] = df['HTML Content'].apply(extract_country_of_origin)
     df['Job'] = df['HTML Content'].apply(extract_job)
     
     # Save the updated DataFrame
@@ -141,7 +186,7 @@ def main():
     df.drop(columns=['Summary'], inplace=True)
     
     print("Step 3: Save New File")
-    #print(df)
+    print(df)
     df.to_csv('updated_dataset.tsv', sep='\t', index=False)
 
 if __name__ == "__main__":
